@@ -11,6 +11,7 @@ namespace EcoNotepad
         public int X, Y, W, H;
         public double Opacity = 1.0;
         public bool ClickThrough;
+        public double PlayerX, PlayerY, PlayerZ;
 
         public bool HasBounds { get { return W > 0 && H > 0; } }
     }
@@ -60,6 +61,7 @@ namespace EcoNotepad
 
         public static string NotesPath { get { return Path.Combine(DataDir, "notes.json"); } }
         public static string SettingsPath { get { return Path.Combine(DataDir, "settings.json"); } }
+        public static string StoresPath { get { return Path.Combine(DataDir, "stores.json"); } }
 
         public static List<NoteEntry> LoadNotes()
         {
@@ -131,6 +133,9 @@ namespace EcoNotepad
                 s.Opacity = Dbl(d, "Opacity", 1.0);
                 if (s.Opacity < 0.5 || s.Opacity > 1.0) s.Opacity = 1.0;
                 s.ClickThrough = Bool(d, "ClickThrough");
+                s.PlayerX = Dbl(d, "PlayerX", 0);
+                s.PlayerY = Dbl(d, "PlayerY", 0);
+                s.PlayerZ = Dbl(d, "PlayerZ", 0);
             }
             catch
             {
@@ -142,8 +147,80 @@ namespace EcoNotepad
         {
             string json = "{\"X\":" + s.X + ",\"Y\":" + s.Y + ",\"W\":" + s.W + ",\"H\":" + s.H +
                 ",\"Opacity\":" + s.Opacity.ToString("0.00##", CultureInfo.InvariantCulture) +
-                ",\"ClickThrough\":" + (s.ClickThrough ? "true" : "false") + "}";
+                ",\"ClickThrough\":" + (s.ClickThrough ? "true" : "false") +
+                ",\"PlayerX\":" + s.PlayerX.ToString("0.###", CultureInfo.InvariantCulture) +
+                ",\"PlayerY\":" + s.PlayerY.ToString("0.###", CultureInfo.InvariantCulture) +
+                ",\"PlayerZ\":" + s.PlayerZ.ToString("0.###", CultureInfo.InvariantCulture) + "}";
             WriteWithFallback(SettingsPath, json);
+        }
+
+        public static List<StoreInfo> LoadStores()
+        {
+            var list = new List<StoreInfo>();
+            try
+            {
+                if (!File.Exists(StoresPath)) return list;
+                object parsed = Json.Parse(File.ReadAllText(StoresPath, Encoding.UTF8));
+                var arr = parsed as List<object>;
+                if (arr == null) return list;
+                foreach (object o in arr)
+                {
+                    var d = o as Dictionary<string, object>;
+                    if (d == null) continue;
+                    var s = new StoreInfo();
+                    s.Name = Str(d, "Name");
+                    s.HasCoords = Bool(d, "HasCoords") || d.ContainsKey("X");
+                    s.X = Dbl(d, "X", 0);
+                    s.Y = Dbl(d, "Y", 0);
+                    s.Z = Dbl(d, "Z", 0);
+                    object pv;
+                    if (d.TryGetValue("Prices", out pv))
+                    {
+                        var pd = pv as Dictionary<string, object>;
+                        if (pd != null)
+                        {
+                            foreach (var kv in pd)
+                            {
+                                if (kv.Value is double) s.Prices[kv.Key] = (double)kv.Value;
+                            }
+                        }
+                    }
+                    list.Add(s);
+                }
+            }
+            catch
+            {
+                // corrupt file -> start fresh
+            }
+            return list;
+        }
+
+        public static void SaveStores(List<StoreInfo> stores)
+        {
+            var sb = new StringBuilder();
+            sb.Append('[');
+            for (int i = 0; i < stores.Count; i++)
+            {
+                StoreInfo s = stores[i];
+                sb.Append("{\"Name\":").Append(Json.EncodeString(s.Name));
+                sb.Append(",\"HasCoords\":").Append(s.HasCoords ? "true" : "false");
+                sb.Append(",\"X\":").Append(s.X.ToString("0.###", CultureInfo.InvariantCulture));
+                sb.Append(",\"Y\":").Append(s.Y.ToString("0.###", CultureInfo.InvariantCulture));
+                sb.Append(",\"Z\":").Append(s.Z.ToString("0.###", CultureInfo.InvariantCulture));
+                sb.Append(",\"Prices\":{");
+                int j = 0;
+                foreach (var kv in s.Prices)
+                {
+                    if (j > 0) sb.Append(',');
+                    sb.Append(Json.EncodeString(kv.Key)).Append(':')
+                        .Append(kv.Value.ToString("0.###", CultureInfo.InvariantCulture));
+                    j++;
+                }
+                sb.Append("}}");
+                if (i < stores.Count - 1) sb.Append(',');
+            }
+            sb.Append(']');
+            WriteWithFallback(StoresPath, sb.ToString());
         }
 
         private static void WriteWithFallback(string path, string content)

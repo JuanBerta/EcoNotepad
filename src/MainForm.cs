@@ -341,7 +341,7 @@ namespace EcoNotepad
 
         private void OnAdd()
         {
-            using (var dlg = new EntryDialog(null))
+            using (var dlg = new EntryDialog(null, _entries))
             {
                 if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Entry != null)
                 {
@@ -400,7 +400,7 @@ namespace EcoNotepad
         {
             NoteEntry e = CurrentEntry();
             if (e == null) return;
-            using (var dlg = new EntryDialog(e))
+            using (var dlg = new EntryDialog(e, _entries))
             {
                 if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Entry != null)
                 {

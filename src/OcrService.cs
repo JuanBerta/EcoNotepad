@@ -19,18 +19,19 @@ namespace EcoNotepad
 
         /// <summary>
         /// Captures the primary screen and returns the recognized text split by lines.
+        /// While capturing, the overlay form is fully hidden (not just faded) so it
+        /// cannot cover the game tooltip; it is restored afterwards.
         /// </summary>
         public static List<string> RecognizeScreen(Form owner)
         {
             lock (Sync)
             {
-                double savedOpacity = -1;
-                bool lowered = false;
-                if (owner != null && !owner.IsDisposed && owner.Visible && owner.Opacity > 0.02)
+                bool wasVisible = owner != null && !owner.IsDisposed && owner.Visible;
+                bool hidden = false;
+                if (wasVisible)
                 {
-                    savedOpacity = owner.Opacity;
-                    owner.Opacity = 0.02;
-                    lowered = true;
+                    owner.Hide();
+                    hidden = true;
                     Thread.Sleep(200);
                 }
 
@@ -53,9 +54,10 @@ namespace EcoNotepad
                 finally
                 {
                     if (bmp != null) bmp.Dispose();
-                    if (lowered && owner != null && !owner.IsDisposed)
+                    if (hidden && owner != null && !owner.IsDisposed)
                     {
-                        owner.Opacity = savedOpacity;
+                        owner.Show();
+                        owner.TopMost = true;
                     }
                 }
             }
