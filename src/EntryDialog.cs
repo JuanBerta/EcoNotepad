@@ -36,7 +36,8 @@ namespace EcoNotepad
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(460, 430);
+            ClientSize = new Size(620, 480);
+            MinimumSize = new Size(ClientSize.Width + 16, ClientSize.Height + 39);
             Font = new Font("Segoe UI", 9f);
             BuildUi();
             if (existing != null) LoadFrom(existing);
@@ -61,19 +62,28 @@ namespace EcoNotepad
             AddRow(layout, 4, "Tags", _txtTags);
             AddRow(layout, 5, "Notes", _txtNotes);
 
-            // Store 行：文本框 + Suggest Store 按钮
-            var storePanel = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-            _txtStore.Width = 250;
+            // Store 行：文本框 + Suggest Store 按钮（嵌套两列表格，避免按钮溢出裁剪）
+            var storeLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                ColumnCount = 2,
+                RowCount = 1
+            };
+            storeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            storeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
             _btnSuggest.Click += (s, e) => OnSuggestStore();
-            storePanel.Controls.Add(_txtStore);
-            storePanel.Controls.Add(_btnSuggest);
+            _txtStore.Dock = DockStyle.Fill;
+            _btnSuggest.Dock = DockStyle.Fill;
+            storeLayout.Controls.Add(_txtStore, 0, 0);
+            storeLayout.Controls.Add(_btnSuggest, 1, 0);
             layout.Controls.Add(new Label
             {
                 Text = "Store",
                 TextAlign = ContentAlignment.MiddleRight,
                 Dock = DockStyle.Fill
             }, 0, 2);
-            layout.Controls.Add(storePanel, 1, 2);
+            layout.Controls.Add(storeLayout, 1, 2);
 
             // 我的位置：X/Y/Z + 提示（游戏内 /pos 或 F8 查看）
             var posPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
