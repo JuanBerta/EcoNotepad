@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# Runtime data (created next to the exe when the app runs)
+notes.json
+settings.json
