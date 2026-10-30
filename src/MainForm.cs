@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -38,6 +39,8 @@ namespace EcoNotepad
         private Button _btnClickThrough;
         private Button _btnOpacity;
         private Button _btnHide;
+        private Button _btnAddMissing;
+        private Button _btnPlanRecipe;
         private Label _lblHotkeys;
         private NotifyIcon _tray;
         private HotkeyManager _hotkeys;
@@ -50,6 +53,7 @@ namespace EcoNotepad
         public MainForm()
         {
             _settings = DataStore.LoadSettings();
+            Icon = LoadAppIcon();
             BuildUi();
             ApplySettings();
             LoadEntries();
@@ -95,6 +99,11 @@ namespace EcoNotepad
                     ToggleClickThrough();
                     return;
                 }
+                if (id == HotkeyManager.IdScan)
+                {
+                    OnScan("Recipe Scan");
+                    return;
+                }
             }
             base.WndProc(ref m);
         }
@@ -103,7 +112,8 @@ namespace EcoNotepad
         {
             Text = "EcoNotepad";
             Font = new Font("Segoe UI", 9f);
-            MinimumSize = new Size(380, 300);
+            // 最小尺寸需容纳：顶部按钮换行后全部可见、7 列表头完整、底部热键提示完整换行
+            MinimumSize = new Size(460, 400);
             TopMost = true;
             ShowInTaskbar = false;
             FormBorderStyle = FormBorderStyle.Sizable;
@@ -111,7 +121,8 @@ namespace EcoNotepad
             var top = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
-                Height = 34,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Padding = new Padding(4, 3, 4, 3)
             };
 
@@ -120,6 +131,12 @@ namespace EcoNotepad
 
             _btnAdd = new Button { Text = "Add", Width = 60 };
             _btnAdd.Click += (s, e) => OnAdd();
+
+            _btnAddMissing = new Button { Text = "Add Missing", Width = 95 };
+            _btnAddMissing.Click += (s, e) => OnScan("Add Missing");
+
+            _btnPlanRecipe = new Button { Text = "Plan Recipe", Width = 95 };
+            _btnPlanRecipe.Click += (s, e) => OnScan("Plan Recipe");
 
             _btnClickThrough = new Button { Width = 130 };
             _btnClickThrough.Click += (s, e) => ToggleClickThrough();
@@ -132,17 +149,34 @@ namespace EcoNotepad
 
             top.Controls.Add(_searchBox);
             top.Controls.Add(_btnAdd);
+            top.Controls.Add(_btnAddMissing);
+            top.Controls.Add(_btnPlanRecipe);
             top.Controls.Add(_btnClickThrough);
             top.Controls.Add(_btnOpacity);
             top.Controls.Add(_btnHide);
 
-            _lblHotkeys = new Label
+            var bottomPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 22,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Padding = new Padding(4, 2, 4, 2)
+            };
+
+            _lblHotkeys = new Label
+            {
+                AutoSize = true,
                 TextAlign = ContentAlignment.MiddleLeft,
-                AutoEllipsis = true,
-                Text = "Ctrl+Shift+N show/hide   Ctrl+Shift+T click-through   Right-click row = edit/delete"
+                MaximumSize = new Size(400, 0),
+                Text = "Ctrl+Shift+N show/hide   Ctrl+Shift+T click-through   Ctrl+Shift+F9 scan recipe   Right-click row = edit/delete"
+            };
+            bottomPanel.Controls.Add(_lblHotkeys);
+
+            // 窗口宽度变化时同步更新底部提示的换行宽度上限，保证完整可见
+            Resize += (s, e) =>
+            {
+                _lblHotkeys.MaximumSize = new Size(Math.Max(120, ClientSize.Width - 16), 0);
             };
 
             _grid = new DataGridView
@@ -159,18 +193,19 @@ namespace EcoNotepad
                 EditMode = DataGridViewEditMode.EditOnKeystrokeOrF2
             };
 
-            AddTextColumn("Item", 60F);
-            AddTextColumn("Price", 30F);
-            AddTextColumn("Store", 45F);
-            AddTextColumn("Qty", 20F);
-            AddTextColumn("Tags", 40F);
-            AddTextColumn("Notes", 60F);
+            AddTextColumn("Item", 60F, 100);
+            AddTextColumn("Price", 30F, 45);
+            AddTextColumn("Store", 45F, 50);
+            AddTextColumn("Qty", 20F, 40);
+            AddTextColumn("Tags", 40F, 50);
+            AddTextColumn("Notes", 60F, 60);
             var done = new DataGridViewCheckBoxColumn
             {
                 DataPropertyName = "Done",
                 HeaderText = "Done",
                 FillWeight = 18F,
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                MinimumWidth = 40
             };
             _doneColIndex = _grid.Columns.Add(done);
 
@@ -202,11 +237,11 @@ namespace EcoNotepad
             _grid.ContextMenuStrip = menu;
 
             Controls.Add(_grid);
-            Controls.Add(_lblHotkeys);
+            Controls.Add(bottomPanel);
             Controls.Add(top);
 
             _tray = new NotifyIcon();
-            _tray.Icon = SystemIcons.Application;
+            _tray.Icon = LoadAppIcon();
             _tray.Text = "EcoNotepad - market notes overlay";
             _tray.Visible = true;
             var trayMenu = new ContextMenuStrip();
@@ -219,14 +254,33 @@ namespace EcoNotepad
             UpdateOpacityButton();
         }
 
-        private void AddTextColumn(string prop, float fillWeight)
+        private static Icon LoadAppIcon()
+        {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icon.ico");
+            if (File.Exists(path))
+            {
+                return new Icon(path);
+            }
+            try
+            {
+                var exeIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                return exeIcon ?? SystemIcons.Application;
+            }
+            catch
+            {
+                return SystemIcons.Application;
+            }
+        }
+
+        private void AddTextColumn(string prop, float fillWeight, int minWidth)
         {
             var c = new DataGridViewTextBoxColumn
             {
                 DataPropertyName = prop,
                 HeaderText = prop,
                 FillWeight = fillWeight,
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                MinimumWidth = minWidth
             };
             _grid.Columns.Add(c);
         }
@@ -296,6 +350,49 @@ namespace EcoNotepad
                     SaveData();
                     SelectEntry(dlg.Entry);
                 }
+            }
+        }
+
+        private void OnScan(string mode)
+        {
+            try
+            {
+                List<string> lines = OcrService.RecognizeScreen(this);
+                RecipeParseResult parsed = EcoRecipeParser.Parse(lines);
+                if (!parsed.Success)
+                {
+                    MessageBox.Show(this, parsed.Error, mode,
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                using (var dlg = new ScanDialog(parsed.RecipeName, parsed.Materials, mode))
+                {
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                    List<RecipeMaterial> toAdd = dlg.ToAdd;
+                    if (toAdd == null || toAdd.Count == 0) return;
+                    NoteEntry last = null;
+                    foreach (RecipeMaterial m in toAdd)
+                    {
+                        var e = new NoteEntry
+                        {
+                            Item = m.Item,
+                            Qty = m.Missing.ToString(),
+                            Tags = "OCR",
+                            Notes = "auto from recipe scan",
+                            Store = ""
+                        };
+                        _entries.Add(e);
+                        last = e;
+                    }
+                    ApplyFilter();
+                    SaveData();
+                    if (last != null) SelectEntry(last);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "OCR scan failed:\n" + ex.Message, mode,
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
